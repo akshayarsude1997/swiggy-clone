@@ -1,0 +1,68 @@
+pipeline {
+    agent any
+    
+    tools {
+        nodejs "nodejs"  
+    }
+
+    environment {
+        SCANNER_HOME = tool "sonar-scanner"
+    }
+
+    stages {
+        stage('git checkout') {
+            steps {
+                git 'https://github.com/akshayarsude1997/swiggy-clone.git'
+            }
+        }
+
+        stage('install dependencies') {
+            steps {
+                // Ensure npm install is run in the correct directory, which is Swiggy_clone
+                dir('Swiggy_clone') {
+                    sh 'npm install'
+                }
+            }
+        }
+      
+        stage('sonarqube analysis') {
+            steps {
+                withSonarQubeEnv('sonar') {
+                    // Ensure npm install is run in the correct directory, which is Swiggy_clone
+                    dir('Swiggy_clone') {
+                        sh ''' $SCANNER_HOME/bin/sonar-scanner -Dsonar.projectKey=Swiggy -Dsonar.projectName=Swiggy \
+                        -Dsonar.sources=. \
+                        -Dsonar.javascript.lcov.reportPaths=coverage/lcov-report/index.html '''
+                    }
+                }
+            }
+        }
+      
+        stage('docker image build') {
+            steps {
+                script {
+                    // Adjust the Dockerfile path if needed (if your Dockerfile is inside `Swiggy_clone/docker/`)
+                    withDockerRegistry(credentialsId: 'docker', toolName: 'docker') {
+                        sh "docker build -t akshayarsude1997/swiggy-clone:${BUILD_NUMBER} -f Swiggy_clone/Dockerfile Swiggy_clone"
+                    }
+                }
+            }
+        }
+
+        stage('trivy image scan') {
+            steps {
+                sh "trivy image akshayarsude1997/swiggy-clone:${BUILD_NUMBER} > trivy-report.txt"
+            }
+        }
+
+        stage('docker image push') {
+            steps {
+                script {
+                    withDockerRegistry(credentialsId: 'docker', toolName: 'docker') {
+                        sh "docker push akshayarsude1997/swiggy-clone:${BUILD_NUMBER}"
+                    }
+                }
+            }
+        }
+    }
+}
